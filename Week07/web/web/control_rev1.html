@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>IOT Dashboard - Color LED & Dimmer</title>
+	<meta charset="UTF-8">
+	<link rel="stylesheet" type="text/css" href="bower_components/bootstrap/dist/css/bootstrap.min.css">
+	<link rel="stylesheet" type="text/css" href="bower_components/snackbarjs/dist/snackbar.min.css">
+	<link rel="stylesheet" type="text/css" href="bower_components/titatoggle/dist/titatoggle-dist-min.css">
+	<link rel="stylesheet" type="text/css" href="bower_components/bootstrap-material-design/dist/css/roboto.min.css">
+	<link rel="stylesheet" type="text/css" href="bower_components/bootstrap-material-design/dist/css/ripples.min.css">
+	<link rel="stylesheet" type="text/css" href="bower_components/bootstrap-material-design/dist/css/material-fullpalette.min.css">
+	<link rel="stylesheet" type="text/css" href="bower_components/nouislider/distribute/nouislider.min.css">
+	<style>
+		.btn-color { min-width: 110px; font-weight: bold; opacity: 0.5; margin: 5px; }
+		.btn-color.active { opacity: 1.0; box-shadow: 0 0 15px rgba(0,0,0,0.4); transform: scale(1.05); }
+	</style>
+</head>
+<body>
+	<div class="container" style="padding-top: 25px;">
+		<div class="text-center">
+			<h2>Color LED & PWM Control</h2>
+
+			<div style="margin: 10px 0; font-size: 16px;">
+				<div><strong>Broker:</strong> <span id="broker-name">-</span></div>
+				<div><strong>Topic:</strong> <span id="topic-name">-</span></div>
+			</div>
+
+			<div style="margin: 10px 0;">
+				<span id="connection-status" class="label label-danger" style="font-size: 15px;">Disconnected</span>
+			</div>
+			<button class="btn btn-material-green-500" id="connect-button">Connect</button>
+			<button class="btn btn-material-red-500" id="disconnect-button" disabled>Disconnect</button>
+			<hr>
+
+			<!-- โซน 1: ปุ่มเลือกผสมแม่สี 3 สี -->
+			<h4>1. เลือกผสมแม่สี (กดเพื่อ เปิด/ปิด แต่ละสี)</h4>
+			<div style="margin-bottom: 20px;">
+				<button class="btn btn-material-red-500 btn-color" id="btn-red">RED: OFF</button>
+				<button class="btn btn-material-green-500 btn-color" id="btn-green">GREEN: OFF</button>
+				<button class="btn btn-material-blue-500 btn-color" id="btn-blue">BLUE: OFF</button>
+			</div>
+
+			<!-- โซน 2: สไลด์บาร์ปรับความสว่าง (PWM) -->
+			<h4>2. ปรับความสว่างหลอดไฟ (PWM Dimmer)</h4>
+			<div style="padding: 10px 15%;">
+				<div id="slider-handles"></div>
+			</div>
+			<h3>Brightness: <span id="value">100</span>%</h3>
+			<button class="btn btn-material-cyan-500 publish-button" id="publish-slider" data-value="100">ส่งค่าความสว่าง</button>
+
+			<hr>
+
+			<!-- โซน 3: ปุ่ม Master ON / OFF -->
+			<h4>3. สวิตช์หลัก (Master Switch)</h4>
+			<div class="row">
+				<div class="col-md-12">
+					<button class="btn btn-material-green-A400 publish-button" data-value="ON">ON (เปิดไฟ)</button>
+					<button class="btn btn-material-deep-orange-A400 publish-button" data-value="OFF">OFF (ดับไฟ)</button>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<script type="text/javascript" src="bower_components/jquery/dist/jquery.min.js"></script>
+	<script src="mqttws31.js" type="text/javascript"></script>
+	<script type="text/javascript" src="bower_components/bootstrap/dist/js/bootstrap.min.js"></script>
+	<script type="text/javascript" src="bower_components/nouislider/distribute/nouislider.min.js"></script>
+	<script type="text/javascript" src="bower_components/snackbarjs/dist/snackbar.min.js"></script>
+	<script type="text/javascript" src="bower_components/bootstrap-material-design/dist/js/material.min.js"></script>
+	<script type="text/javascript" src="bower_components/bootstrap-material-design/dist/js/ripples.min.js"></script>
+	<script type="text/javascript">
+		$(function() {
+			$.material.init();
+
+			var MQTTbroker = 'mqtt-dashboard.com';
+			var MQTTport = 8884;
+			var MQTTpublishTopic = '115/color'; // กำหนดชื่อ Topic
+
+			$('#broker-name').text(MQTTbroker + ':' + MQTTport);
+			$('#topic-name').text(MQTTpublishTopic);
+
+			var client = new Paho.MQTT.Client(MQTTbroker, MQTTport, "client_" + parseInt(Math.random() * 10000, 10));
+			var isConnected = false;
+
+			var statusShow = document.getElementById('connection-status');
+			var connectButton = document.getElementById('connect-button');
+			var disconnectButton = document.getElementById('disconnect-button');
+
+			// สถานะของแม่สีทั้ง 3 (0 = ปิด, 1 = เปิด)
+			var colorState = { r: 0, g: 0, b: 0 };
+
+			function updateConnectionStatus(connected, message) {
+				isConnected = connected;
+				$(statusShow).text(message || (connected ? 'Connected' : 'Disconnected'));
+				$(statusShow).toggleClass('label-success', connected).toggleClass('label-danger', !connected);
+				$(connectButton).prop('disabled', connected);
+				$(disconnectButton).prop('disabled', !connected);
+				$('.publish-button, .btn-color').prop('disabled', !connected);
+			}
+
+			client.onConnectionLost = function (responseObject) {
+				updateConnectionStatus(false, 'Disconnected');
+			};
+
+			function connectMQTT() {
+				updateConnectionStatus(false, 'Connecting...');
+				client.connect({
+					timeout: 3,
+					onSuccess: function () { updateConnectionStatus(true, 'Connected'); },
+					onFailure: function (msg) { updateConnectionStatus(false, 'Connection Failed'); }
+				});
+			}
+
+			$(connectButton).click(function () { if (!isConnected) connectMQTT(); });
+			$(disconnectButton).click(function () { if (isConnected) { client.disconnect(); updateConnectionStatus(false, 'Disconnected'); } });
+
+			// ฟังก์ชันส่งข้อความผ่าน MQTT
+			function sendMQTT(payloadText) {
+				if (!isConnected) {
+					$.snackbar({content: 'กรุณากด Connect ก่อนใช้งาน'});
+					return;
+				}
+				var message = new Paho.MQTT.Message(payloadText);
+				message.destinationName = MQTTpublishTopic;
+				client.send(message);
+				$.snackbar({content: 'ส่งคำสั่ง: ' + payloadText});
+			}
+
+			// ตั้งค่า Slider
+			var rangeSlider = document.getElementById('slider-handles');
+			var valueShow = document.getElementById('value');
+
+			noUiSlider.create(rangeSlider, {
+				start: 100,
+				connect: "lower",
+				range: { 'min': 0, 'max': 100 }
+			});
+
+			rangeSlider.noUiSlider.on('update', function(values, handle){
+				var brightness = parseInt(values[handle]);
+				$(valueShow).text(brightness);
+				$('#publish-slider').data('value', brightness);
+			});
+
+			// เมื่อเลื่อน Slider เสร็จแล้วปล่อยมือ ให้ส่งค่าความสว่างอัตโนมัติ
+			rangeSlider.noUiSlider.on('change', function(values, handle){
+				sendMQTT(parseInt(values[handle]) + '');
+			});
+
+			// ปุ่มส่งค่าจาก Slider และปุ่ม ON / OFF
+			$('.publish-button').click(function(){
+				var val = $(this).data('value') + '';
+				sendMQTT(val);
+			});
+
+			// ปุ่มกดสลับเปิด/ปิดแม่สี (RED, GREEN, BLUE)
+			$('#btn-red').click(function(){
+				colorState.r = colorState.r ? 0 : 1;
+				$(this).toggleClass('active', colorState.r === 1).text(colorState.r ? 'RED: ON' : 'RED: OFF');
+				sendMQTT('COLOR:' + colorState.r + ',' + colorState.g + ',' + colorState.b);
+			});
+
+			$('#btn-green').click(function(){
+				colorState.g = colorState.g ? 0 : 1;
+				$(this).toggleClass('active', colorState.g === 1).text(colorState.g ? 'GREEN: ON' : 'GREEN: OFF');
+				sendMQTT('COLOR:' + colorState.r + ',' + colorState.g + ',' + colorState.b);
+			});
+
+			$('#btn-blue').click(function(){
+				colorState.b = colorState.b ? 0 : 1;
+				$(this).toggleClass('active', colorState.b === 1).text(colorState.b ? 'BLUE: ON' : 'BLUE: OFF');
+				sendMQTT('COLOR:' + colorState.r + ',' + colorState.g + ',' + colorState.b);
+			});
+		});
+	</script>
+</body>
+</html>
