@@ -8,6 +8,13 @@
       "when": 1785945733011,
       "tag": "0000_strong_micromax",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1788607750224,
+      "tag": "0001_nervous_purple_man",
+      "breakpoints": true
     }
   ]
 }
