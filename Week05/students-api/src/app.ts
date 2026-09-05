@@ -25,3 +25,5 @@ app.onError((error, c) => {
   console.error(error);
   return c.json({ error: "Internal server error" }, 500);
 });
+
+export default app;
