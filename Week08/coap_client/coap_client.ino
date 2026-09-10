@@ -3,11 +3,11 @@
 #include <coap-simple.h>
 
 // ===== ใส่ WiFi SSID, Password ของตัวเอง =====
-const char WIFI_SSID[] = "panwit_2.4G";     // CHANGE TO YOUR WIFI SSID
-const char WIFI_PASSWORD[] = "ilovekmitl";  // CHANGE TO YOUR WIFI PASSWORD
+const char WIFI_SSID[] = "Free Robux";     // CHANGE TO YOUR WIFI SSID
+const char WIFI_PASSWORD[] = "555555333311";  // CHANGE TO YOUR WIFI PASSWORD
 
-// กำหนด IP ของ CoAP Server (จากตัวอย่างที่ 1)
-IPAddress serverIP(192, 168, 1, 123);   // <-- แก้ IP ให้ตรงกับ IP ของ CoAP Server
+// กำหนด IP ของ CoAP Server
+IPAddress serverIP(10, 156, 11, 248);   // <-- แก้ IP ให้ตรงกับ IP ของ CoAP Server
 const uint16_t COAP_PORT = 5683;
 
 WiFiUDP udp;
@@ -61,22 +61,19 @@ void setup() {
 void loop() {
   coap.loop(); // รับ response
 
-  if (millis() - lastPoll >= POLL_MS) {
+  // เปลี่ยนเวลาหน่วงให้เร็วขึ้นเป็น 200 ms
+  if (millis() - lastPoll >= 200) { 
     lastPoll = millis();
 
-    Serial.println("GET /ping");
-    coap.get(serverIP, COAP_PORT, "ping");
-
-    delay(500);
-
-    Serial.println("GET /status");
-    coap.get(serverIP, COAP_PORT, "status");
-
-    // สาธิตสั่ง LED=on/off สลับทุกครั้ง
-    static bool on = false;
-    on = !on;
-    const char* body = on ? "on" : "off";
-    Serial.print("PUT /led "); Serial.println(body);
-    coap.put(serverIP, 5683, "led", body);
+    // อ่านค่าแรงดัน (0-5V) และ Scale ให้อยู่ในช่วง 0-100
+    int potValue = analogRead(A0); 
+    int mappedValue = map(potValue, 0, 1023, 0, 100); 
+    
+    // แปลงตัวเลขเป็นข้อความและส่ง PUT Request
+    String payload = String(mappedValue); 
+    Serial.print("PUT /led "); 
+    Serial.println(payload); 
+    
+    coap.put(serverIP, 5683, "led", payload.c_str()); 
   }
 }
