@@ -6,8 +6,8 @@ import ssl
 # RabbitMQ Configuration
 # -----------------------------
 RABBITMQ_HOST = "amqp.iot.kmitl.co"
-RABBITMQ_USER = "รหัส นศ"
-RABBITMQ_PASS = "ค่าที่กำหนดให้"
+RABBITMQ_USER = "67070115"
+RABBITMQ_PASS = "DnpEbOotak0aJ-BDMgYwEdutpmjwDVIx"
 
 EXCHANGE_NAME = "amq.direct"
 EXCHANGE_TYPE = "direct"
@@ -29,7 +29,7 @@ parameters = pika.ConnectionParameters(
     host=RABBITMQ_HOST,
     credentials=credentials,
     port=5671,
-    virtual_host="/",
+    virtual_host="67070115",
     ssl_options=pika.SSLOptions(
         ssl.create_default_context()   # verifies broker cert against system CAs
     )
