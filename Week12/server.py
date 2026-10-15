@@ -1,4 +1,3 @@
-
 import os
 import logging
 import threading
@@ -7,7 +6,7 @@ import RPi.GPIO as GPIO
 from mcp.server import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 
-
+# กำหนดขา GPIO 4 (โหมด BCM) สำหรับควบคุมไฟ LED บนบอร์ดโดยตรง
 LIGHT = 4
 
 GPIO.setmode(GPIO.BCM)
@@ -15,21 +14,22 @@ GPIO.setup(LIGHT, GPIO.OUT)
 
 logging.basicConfig(level=logging.INFO)
 
-# ตั้งค่า MQTT Broker 
+# ตั้งค่า MQTT Broker
 BROKER = os.getenv("MQTT_BROKER", "mqtt-dashboard.com")
 PORT = 1883
 
-DEVICE_ID = "personlight-demo"
+# [จุดแก้ไขที่ 1] ตั้งชื่อ DEVICE_ID เฉพาะของตัวเอง
+DEVICE_ID = "mcp-115"
 COMMAND_TOPIC = f"{DEVICE_ID}/command"
 STATUS_TOPIC = f"{DEVICE_ID}/person"
 
 person_status = None
 status_lock = threading.Lock()
 
-# MQTT connection
+# [จุดแก้ไขที่ 2] ตั้งชื่อ client_id เฉพาะของตัวเองไม่ให้ซ้ำกับคนอื่น
 mqtt_client = mqtt.Client(
     mqtt.CallbackAPIVersion.VERSION2,
-    client_id="raspi-iot-mcp-panwit"
+    client_id="raspi-iot-mcp-pitchayut"
 )
 
 def on_connect(client, userdata, flags, reason_code, properties):
@@ -48,9 +48,10 @@ mqtt_client.on_message = on_message
 mqtt_client.connect(BROKER, PORT, 60)
 mqtt_client.loop_start()
 
-# Create MCP Server
+# สร้าง MCP Server
 mcp = MCPServer("RaspberryPi-IoT")
 
+# Tool ตัวที่ 1: สั่งเปิด/ปิดไฟผ่านการส่งข้อความไปที่ MQTT Broker
 @mcp.tool()
 def set_led(action: str) -> str:
     """Turn the IoT LED on or off.
@@ -61,7 +62,13 @@ def set_led(action: str) -> str:
     if action not in ("on", "off"):
         return "Error: action must be on or off"
 
-    # Publish only an allowed command
+    # สั่งเปิด/ปิดไฟที่ขา GPIO 4 ไปพร้อมกับการส่ง MQTT
+    if action == "on":
+        GPIO.output(LIGHT, GPIO.HIGH)
+    else:
+        GPIO.output(LIGHT, GPIO.LOW)
+
+    # Publish เฉพาะคำสั่งที่อนุญาต (แปลงเป็นตัวพิมพ์ใหญ่ ON / OFF)
     info = mqtt_client.publish(
         COMMAND_TOPIC,
         action.upper(),
@@ -74,7 +81,7 @@ def set_led(action: str) -> str:
 
     return f"Sent LED command: {action.upper()}"
 
-
+# Tool ตัวที่ 2: สั่งเปิด/ปิดไฟ LED ที่ต่ออยู่กับขา GPIO 4 บน Raspberry Pi โดยตรง
 @mcp.tool()
 def set_led_raspi(action: str) -> str:
     """Turn Raspberry Pi LED on or off."""
@@ -91,7 +98,7 @@ def set_led_raspi(action: str) -> str:
 
     return "Error: action must be on or off"
 
-
+# Tool ตัวที่ 3: อ่านสถานะการตรวจจับบุคคลล่าสุดจาก MQTT Topic
 @mcp.tool()
 def get_person_status() -> str:
     """Get the latest person detection status from the camera."""
@@ -108,22 +115,22 @@ def get_person_status() -> str:
     return f"Latest camera status: {status}"
 
 if __name__ == "__main__":
-    # MCP over Streamable HTTP
+    # [จุดแก้ไขที่ 3] นำโดเมนที่ได้จาก tunnl.gg ของเรามาใส่แทน gentle-wave-62fcc6af.tunnl.gg ทั้ง 3 บรรทัด
     security = TransportSecuritySettings(
         allowed_hosts=[
-            "gentle-wave-62fcc6af.tunnl.gg",
-            "gentle-wave-62fcc6af.tunnl.gg:*",
+            "pure-canyon-ccffaed0.tunnl.gg",
+            "pure-canyon-ccffaed0.tunnl.gg:*",
             "localhost:8000",
             "127.0.0.1:8000",
             "0.0.0.0:8000",
         ],
         allowed_origins=[
-            "https://gentle-wave-62fcc6af.tunnl.gg/",
-    ],
+            "https://pure-canyon-ccffaed0.tunnl.gg/",
+        ],
     )
 
     mcp.run(
         transport="streamable-http",
         transport_security=security,
-        host = "0.0.0.0"
+        host="0.0.0.0"
     )
