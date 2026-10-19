@@ -1,4 +1,6 @@
 import os
+import time
+import json
 import logging
 import threading
 import paho.mqtt.client as mqtt
@@ -6,27 +8,34 @@ import RPi.GPIO as GPIO
 from mcp.server import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 
-# กำหนดขา GPIO 4 (โหมด BCM) สำหรับควบคุมไฟ LED บนบอร์ดโดยตรง
-LIGHT = 4
+# กำหนดขา GPIO (โหมด BCM) สำหรับไฟ LED และ Ultrasonic
+LIGHT = 4   # ขาไฟ LED ที่ GPIO 4 (เข็ม Pin 7)
+TRIG = 23   # ขา TRIG ของ Ultrasonic ที่ GPIO 23 (เข็ม Pin 16)
+ECHO = 24   # ขา ECHO ของ Ultrasonic ที่ GPIO 24 (เข็ม Pin 18)
 
+GPIO.setwarnings(False)
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(LIGHT, GPIO.OUT)
+GPIO.setup(TRIG, GPIO.OUT)
+GPIO.setup(ECHO, GPIO.IN)
+GPIO.output(TRIG, GPIO.LOW)
 
 logging.basicConfig(level=logging.INFO)
 
-# ตั้งค่า MQTT Broker
+# ตั้งค่า MQTT Broker และ Topics
 BROKER = os.getenv("MQTT_BROKER", "mqtt-dashboard.com")
 PORT = 1883
 
-# [จุดแก้ไขที่ 1] ตั้งชื่อ DEVICE_ID เฉพาะของตัวเอง
 DEVICE_ID = "mcp-115"
 COMMAND_TOPIC = f"{DEVICE_ID}/command"
 STATUS_TOPIC = f"{DEVICE_ID}/person"
+TEMP_TOPIC = f"{DEVICE_ID}/temperature"  # เพิ่ม Topic รับค่าอุณหภูมิจาก Arduino
 
 person_status = None
+latest_temperature = None
 status_lock = threading.Lock()
 
-# [จุดแก้ไขที่ 2] ตั้งชื่อ client_id เฉพาะของตัวเองไม่ให้ซ้ำกับคนอื่น
+# ตั้งค่า MQTT Client
 mqtt_client = mqtt.Client(
     mqtt.CallbackAPIVersion.VERSION2,
     client_id="raspi-iot-mcp-pitchayut"
@@ -34,13 +43,29 @@ mqtt_client = mqtt.Client(
 
 def on_connect(client, userdata, flags, reason_code, properties):
     if reason_code == 0:
+        # Subscribe Topic
         client.subscribe(STATUS_TOPIC)
-        logging.info("MQTT connected")
+        client.subscribe(TEMP_TOPIC)
+        logging.info(f"MQTT connected! Subscribed to {STATUS_TOPIC} and {TEMP_TOPIC}")
 
 def on_message(client, userdata, msg):
-    global person_status
+    global person_status, latest_temperature
+    payload_str = msg.payload.decode("utf-8").strip()
+
     with status_lock:
-        person_status = msg.payload.decode("utf-8")
+        if msg.topic == STATUS_TOPIC:
+            person_status = payload_str
+        elif msg.topic == TEMP_TOPIC:
+            # รองรับทั้งข้อความ JSON เช่น {"temperature": 31.2} และตัวเลขธรรมดา เช่น 31.2
+            try:
+                data = json.loads(payload_str)
+                if isinstance(data, dict) and "temperature" in data:
+                    latest_temperature = str(data["temperature"])
+                else:
+                    latest_temperature = payload_str
+            except json.JSONDecodeError:
+                latest_temperature = payload_str
+            logging.info(f"Received temperature: {latest_temperature} °C")
 
 mqtt_client.on_connect = on_connect
 mqtt_client.on_message = on_message
@@ -51,7 +76,8 @@ mqtt_client.loop_start()
 # สร้าง MCP Server
 mcp = MCPServer("RaspberryPi-IoT")
 
-# Tool ตัวที่ 1: สั่งเปิด/ปิดไฟผ่านการส่งข้อความไปที่ MQTT Broker
+# รายการ MCP Tools ทั้งหมด 5 ตัว
+# Tool ตัวที่ 1: สั่งเปิด/ปิดไฟผ่านการส่งข้อความไปที่ MQTT Broker และคุม GPIO
 @mcp.tool()
 def set_led(action: str) -> str:
     """Turn the IoT LED on or off.
@@ -85,7 +111,6 @@ def set_led(action: str) -> str:
 @mcp.tool()
 def set_led_raspi(action: str) -> str:
     """Turn Raspberry Pi LED on or off."""
-
     action = action.strip().lower()
 
     if action == "on":
@@ -114,8 +139,58 @@ def get_person_status() -> str:
 
     return f"Latest camera status: {status}"
 
+# Tool ตัวที่ 4: วัดค่าระยะทางจาก Ultrasonic Sensor (HC-SR04)
+@mcp.tool()
+def get_distance() -> str:
+    """Get the distance measured by the Ultrasonic sensor (HC-SR04) on Raspberry Pi in centimeters (cm)."""
+    # เคลียร์ขา TRIG ให้เป็น LOW สั้นๆ
+    GPIO.output(TRIG, GPIO.LOW)
+    time.sleep(0.05)
+
+    # ส่งคลื่น Ultrasonic ออกไปเป็นเวลา 10 ไมโครวินาที (10us)
+    GPIO.output(TRIG, GPIO.HIGH)
+    time.sleep(0.00001)
+    GPIO.output(TRIG, GPIO.LOW)
+
+    # รอจับเวลาจังหวะที่ขา ECHO เปลี่ยนเป็น HIGH
+    timeout = time.time() + 0.1
+    pulse_start = time.time()
+    while GPIO.input(ECHO) == 0:
+        pulse_start = time.time()
+        if pulse_start > timeout:
+            return "Error: Ultrasonic timeout (ECHO did not go HIGH). Check TRIG/ECHO wiring."
+
+    # รอจับเวลาจังหวะที่ขา ECHO กลับลงมาเป็น LOW
+    timeout = time.time() + 0.1
+    pulse_end = time.time()
+    while GPIO.input(ECHO) == 1:
+        pulse_end = time.time()
+        if pulse_end > timeout:
+            return "Error: Ultrasonic timeout (ECHO did not go LOW)."
+
+    # คำนวณระยะทางเป็นเซนติเมตร (ความเร็วเสียง 34300 cm/s หาร 2 สำหรับไป-กลับ)
+    pulse_duration = pulse_end - pulse_start
+    distance = round((pulse_duration * 34300) / 2, 2)
+
+    return f"Distance: {distance} cm"
+
+# Tool ตัวที่ 5: อ่านค่าอุณหภูมิล่าสุดที่รับมาจาก Arduino ผ่าน MQTT
+@mcp.tool()
+def get_temperature() -> str:
+    """Get the latest temperature value in Celsius received from the Arduino sensor via MQTT."""
+    with status_lock:
+        temp = latest_temperature
+
+    if temp is None:
+        return (
+            "No temperature data received yet. "
+            "Check that the Arduino publishes to "
+            + TEMP_TOPIC
+        )
+
+    return f"Current temperature: {temp} °C"
+
 if __name__ == "__main__":
-    # [จุดแก้ไขที่ 3] นำโดเมนที่ได้จาก tunnl.gg ของเรามาใส่แทน gentle-wave-62fcc6af.tunnl.gg ทั้ง 3 บรรทัด
     security = TransportSecuritySettings(
         allowed_hosts=[
             "pure-canyon-ccffaed0.tunnl.gg",
