@@ -143,36 +143,39 @@ def get_person_status() -> str:
 @mcp.tool()
 def get_distance() -> str:
     """Get the distance measured by the Ultrasonic sensor (HC-SR04) on Raspberry Pi in centimeters (cm)."""
-    # เคลียร์ขา TRIG ให้เป็น LOW สั้นๆ
-    GPIO.output(TRIG, GPIO.LOW)
-    time.sleep(0.05)
+    
+    # วัดระยะทางซ้ำสูงสุด 3 รอบ เพื่อป้องกันค่า Error จาก Linux OS lag
+    for _ in range(3):
+        GPIO.output(TRIG, GPIO.LOW)
+        time.sleep(0.05)
 
-    # ส่งคลื่น Ultrasonic ออกไปเป็นเวลา 10 ไมโครวินาที (10us)
-    GPIO.output(TRIG, GPIO.HIGH)
-    time.sleep(0.00001)
-    GPIO.output(TRIG, GPIO.LOW)
+        GPIO.output(TRIG, GPIO.HIGH)
+        time.sleep(0.00001)
+        GPIO.output(TRIG, GPIO.LOW)
 
-    # รอจับเวลาจังหวะที่ขา ECHO เปลี่ยนเป็น HIGH
-    timeout = time.time() + 0.1
-    pulse_start = time.time()
-    while GPIO.input(ECHO) == 0:
+        timeout = time.time() + 0.1
         pulse_start = time.time()
-        if pulse_start > timeout:
-            return "Error: Ultrasonic timeout (ECHO did not go HIGH). Check TRIG/ECHO wiring."
+        while GPIO.input(ECHO) == 0:
+            pulse_start = time.time()
+            if pulse_start > timeout:
+                break # หมดเวลาข้ามไปวัดใหม่
 
-    # รอจับเวลาจังหวะที่ขา ECHO กลับลงมาเป็น LOW
-    timeout = time.time() + 0.1
-    pulse_end = time.time()
-    while GPIO.input(ECHO) == 1:
         pulse_end = time.time()
-        if pulse_end > timeout:
-            return "Error: Ultrasonic timeout (ECHO did not go LOW)."
+        while GPIO.input(ECHO) == 1:
+            pulse_end = time.time()
+            if pulse_end > timeout:
+                break # หมดเวลาข้ามไปวัดใหม่
 
-    # คำนวณระยะทางเป็นเซนติเมตร (ความเร็วเสียง 34300 cm/s หาร 2 สำหรับไป-กลับ)
-    pulse_duration = pulse_end - pulse_start
-    distance = round((pulse_duration * 34300) / 2, 2)
+        pulse_duration = pulse_end - pulse_start
+        distance = round((pulse_duration * 34300) / 2, 2)
 
-    return f"Distance: {distance} cm"
+        # ถ้าระยะทางอยู่ในช่วงที่สมเหตุสมผล (2 cm - 400 cm) ให้ส่งค่ากลับทันที
+        if 2 <= distance <= 400:
+            return f"Distance: {distance} cm"
+            
+        time.sleep(0.1) # พักแป๊บนึงก่อนลองวัดใหม่
+
+    return "Error: Could not get a stable reading. Make sure there is an obstacle within 4 meters."
 
 # Tool ตัวที่ 5: อ่านค่าอุณหภูมิล่าสุดที่รับมาจาก Arduino ผ่าน MQTT
 @mcp.tool()
