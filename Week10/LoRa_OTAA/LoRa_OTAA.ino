@@ -53,17 +53,17 @@
 // first. When copying an EUI from ttnctl output, this means to reverse
 // the bytes. For TTN issued EUIs the last bytes should be 0xD5, 0xB3,
 // 0x70.
-static const u1_t PROGMEM APPEUI[8]={ 0xBE, 0x60, 0xA4, 0x0D, 0xB5, 0xCD, 0x81, 0x3C  };
+static const u1_t PROGMEM APPEUI[8]={ 0x02, 0xCA, 0x76, 0x70, 0x4B, 0x5E, 0x4B, 0x1A  };
 void os_getArtEui (u1_t* buf) { memcpy_P(buf, APPEUI, 8);}
 
 // This should also be in little endian format, see above.
-static const u1_t PROGMEM DEVEUI[8]={ 0x9F, 0x22, 0x8F, 0x79, 0x42, 0x1D, 0x44, 0x6A };
+static const u1_t PROGMEM DEVEUI[8]={ 0xD0, 0x90, 0xF6, 0x8B, 0x04, 0xD3, 0x9F, 0x6F };
 void os_getDevEui (u1_t* buf) { memcpy_P(buf, DEVEUI, 8);}
 
 // This key should be in big endian format (or, since it is not really a
 // number but a block of memory, endianness does not really apply). In
 // practice, a key taken from ttnctl can be copied as-is.
-static const u1_t PROGMEM APPKEY[16] = { 0xF6, 0x1A, 0xED, 0xB3, 0xB1, 0x0C, 0x90, 0x61, 0xD7, 0x04, 0x74, 0x5C, 0x52, 0x76, 0x0B, 0xBD };
+static const u1_t PROGMEM APPKEY[16] = { 0x2E, 0x2E, 0xD3, 0xF8, 0xAD, 0x5F, 0xD0, 0x20, 0x88, 0xBE, 0x49, 0x0A, 0x4A, 0x95, 0x2A, 0xEF };
 void os_getDevKey (u1_t* buf) {  memcpy_P(buf, APPKEY, 16);}
 
 static uint8_t mydata[] = "Hello, world!";
@@ -256,6 +256,8 @@ void setup() {
     os_init();
     // Reset the MAC state. Session and pending data transfers will be discarded.
     LMIC_reset();
+
+    LMIC_setClockError(MAX_CLOCK_ERROR * 1 / 100);
 
     LMIC_setupChannel(
     0,

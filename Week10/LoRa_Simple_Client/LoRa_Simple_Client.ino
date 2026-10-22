@@ -25,7 +25,7 @@ RH_RF95 rf95;
 //The parameter are pre-set for 868Mhz used. If user want to use lower frenqucy 433Mhz.Better to set 
 //rf95.setSignalBandwidth(31250);
 //rf95.setCodingRate4(8);
-float frequency = 923.2;
+float frequency = 934.4;
 
 void setup() 
 {
@@ -40,7 +40,7 @@ void setup()
   rf95.setTxPower(13);
 
   // Setup Spreading Factor (6 ~ 12)
-  rf95.setSpreadingFactor(7);
+  rf95.setSpreadingFactor(12);
   
   // Setup BandWidth, option: 7800,10400,15600,20800,31250,41700,62500,125000,250000,500000
   //Lower BandWidth for longer distance.
@@ -74,25 +74,35 @@ void setup()
 void loop()
 {
   Serial.println("Sending to LoRa Server");
-  // Send a message to LoRa Server
-  uint8_t data[] = "Hello, this is device 1";
+
+  // ข้อความขนาด 21 bytes (รวม Null terminator '\0' ท้ายสตริง)
+  //uint8_t data[] = "Hello, this is Yahu!";
+  uint8_t data[] = "Hello, this is Yahu! 6767676767676767676767676767";
+
+  // เริ่มจับเวลา Time on Air ด้วย micros()
+  unsigned long startTime = micros();
   rf95.send(data, sizeof(data));
-  
   rf95.waitPacketSent();
-  // Now wait for a reply
+  unsigned long endTime = micros();
+
+  // คำนวณเวลาที่ใช้ส่งและแสดงผลเป็นหน่วยมิลลิวินาที (ms)
+  unsigned long timeOnAir = endTime - startTime;
+  Serial.print("Time on Air = ");
+  Serial.print(timeOnAir / 1000.0);
+  Serial.println(" ms");
+
+  // รอรับข้อความตอบกลับจาก Server
   uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
   uint8_t len = sizeof(buf);
 
   if (rf95.waitAvailableTimeout(3000))
   { 
-    // Should be a reply message for us now   
     if (rf95.recv(buf, &len))
-   {
+    {
       Serial.print("got reply: ");
       Serial.println((char*)buf);
       Serial.print("RSSI: ");
       Serial.println(rf95.lastRssi(), DEC);  
-     
     }
     else
     {
@@ -105,5 +115,3 @@ void loop()
   }
   delay(5000);
 }
-
-
